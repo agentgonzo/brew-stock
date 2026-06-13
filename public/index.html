@@ -119,9 +119,9 @@
           <td class="qty-cell">${fmtQty(item.quantity, item.unit)}${out ? ' <span class="out-badge">OUT</span>' : ''}</td>
           <td>
             <div class="inline-form">
-              <input type="number" step="${t.step}" class="adjust-input" placeholder="amt" style="width:5.5rem">
-              <button data-add="${item.id}">Add</button>
-              <button class="secondary" data-set="${item.id}">Set</button>
+              <input type="number" step="${t.step}" class="adjust-input" style="width:5.5rem">
+              <button data-add="${item.id}" disabled>Add</button>
+              <button class="secondary" data-set="${item.id}" disabled>Set</button>
             </div>
           </td>
           <td>
@@ -198,6 +198,14 @@
         return;
       }
 
+    });
+
+    // Enable Add/Set only when their row's adjust input has a value.
+    document.addEventListener('input', (e) => {
+      if (!e.target.classList.contains('adjust-input')) return;
+      const form = e.target.closest('.inline-form');
+      const empty = e.target.value === '';
+      form.querySelectorAll('button').forEach((b) => { b.disabled = empty; });
     });
 
     // Read the shared adjust input that sits in the same cell as a button.
