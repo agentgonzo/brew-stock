@@ -62,16 +62,16 @@ function parseBeerXML(xml) {
     });
   }
 
-  // Hops — kg -> g
+  // Hops — kg -> g. Multiple additions of the same hop (e.g. bittering + dry
+  // hop) are summed into a single ingredient row.
+  const hopTotals = new Map();
   for (const h of asArray((recipe.HOPS || {}).HOP)) {
     const hName = text(h.NAME);
     if (!hName) continue;
-    ingredients.push({
-      name: hName,
-      type: 'hop',
-      amount: kgToGrams(h.AMOUNT),
-      unit: 'g',
-    });
+    hopTotals.set(hName, (hopTotals.get(hName) || 0) + kgToGrams(h.AMOUNT));
+  }
+  for (const [hName, total] of hopTotals) {
+    ingredients.push({ name: hName, type: 'hop', amount: total, unit: 'g' });
   }
 
   // Yeast — stored as a single packet.
