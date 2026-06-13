@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Recipe — Brew Stock Manager</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css">
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <main class="container">
+    <nav class="app-nav">
+      <a href="/">Stock</a>
+      <a href="/recipes.html">Recipes</a>
+      <a href="/mappings.html">Mappings</a>
+    </nav>
+
+    <a href="/recipes.html">&larr; All recipes</a>
+    <h1 id="recipe-title">Recipe</h1>
+    <p id="recipe-style" class="muted"></p>
+    <div id="message"></div>
+
+    <h3>Stock check</h3>
+    <table class="fit-table">
+      <thead>
+        <tr><th>Ingredient</th><th>Required</th><th>In stock</th><th>Status</th></tr>
+      </thead>
+      <tbody id="check-body">
+        <tr><td colspan="4" aria-busy="true">Loading…</td></tr>
+      </tbody>
+    </table>
+
+    <p id="brewable-summary"></p>
+    <button id="brew-btn" disabled>Brew this</button>
+
+    <article>
+      <h3>Manage recipe</h3>
+      <form id="update-form">
+        <label for="update-file">Replace from a new BeerXML file</label>
+        <input id="update-file" type="file" name="file" accept=".xml,application/xml,text/xml" required>
+        <button type="submit">Update recipe</button>
+      </form>
+      <hr>
+      <button id="delete-btn" class="contrast outline">Delete this recipe</button>
+    </article>
+  </main>
+
+  <script src="/app.js"></script>
+  <script>
+    const recipeId = param('id');
+    let canBrewFully = false;
+    const msgEl = qs('#message');
+    function showMessage(text, kind) {
+      msgEl.innerHTML = `<div class="message ${kind}">${esc(text)}</div>`;
+    }
+
+    function statusCell(row) {
+      if (row.unresolved) return '<span class="unresolved">Unresolved</span>';
+      return row.ok
+        ? '<span class="ok">OK</span>'
+        : '<span class="short">Short</span>';
+    }
+
+    function rowClass(row) {
+      if (row.unresolved) return 'row-unresolved';
+      return row.ok ? 'row-ok' : 'row-short';
+    }
+
+    async function loadRecipe() {
+      if (!recipeId) {
+        showMessage('No recipe id given.', 'error');
+        return;
+      }
+      const recipe = await apiGet(`/api/recipes/${recipeId}`);
+      qs('#recipe-title').textContent = recipe.name;
+      qs('#recipe-style').textContent = recipe.style || '';
+      document.title = `${recipe.name} — Brew Stock Manager`;
+
+      const check = await apiGet(`/api/recipes/${recipeId}/check`);
+      const body = qs('#check-body');
+      body.innerHTML = check.ingredients.map((row) => `
+        <tr class="${rowClass(row)}">
+          <td>${esc(row.name)}</td>
+          <td>${fmtQty(row.required, row.unit)}</td>
+          <td>${row.inStock === null ? '<span class="muted">—</span>' : fmtQty(row.inStock, row.unit)}</td>
+          <td>${statusCell(row)}</td>
+        </tr>`).join('');
+
+      // Brew is always available; when stock is short/unresolved it becomes a
+      // warning and only what's available will be deducted.
+      const brewBtn = qs('#brew-btn');
+      const summary = qs('#brewable-summary');
+      canBrewFully = check.brewable;
+      brewBtn.disabled = false;
+      brewBtn.classList.toggle('brew-warn', !check.brewable);
+      brewBtn.textContent = check.brewable ? 'Brew this' : 'Brew anyway';
+      if (check.brewable) {
+        summary.innerHTML = '<span class="ok">All ingredients in stock — ready to brew.</span>';
+      } else {
+        const unresolved = check.ingredients.some((r) => r.unresolved);
+        summary.innerHTML = unresolved
+          ? '<span class="unresolved">Some ingredients are unresolved — brewing will skip them. Resolve on the Mappings page.</span>'
+          : '<span class="short">Not enough stock for some ingredients — brewing will deduct what you have.</span>';
+      }
+    }
+
+    qs('#brew-btn').addEventListener('click', async () => {
+      const ok = await confirmDialog({
+        title: 'Brew this recipe',
+        message: canBrewFully
+          ? 'Deduct all ingredients from stock?'
+          : 'Some ingredients are short or unresolved. Brew anyway? Only the stock you have will be deducted — nothing goes below zero.',
+        confirmText: canBrewFully ? 'Brew' : 'Brew anyway',
+        danger: !canBrewFully,
+      });
+      if (!ok) return;
+      try {
+        const res = await apiPost(`/api/recipes/${recipeId}/brew`);
+        const notes = [];
+        if (res.short && res.short.length) {
+          notes.push(`partial: ${res.short.map((s) => s.name).join(', ')}`);
+        }
+        if (res.unresolved && res.unresolved.length) {
+          notes.push(`skipped (unresolved): ${res.unresolved.join(', ')}`);
+        }
+        showMessage(
+          notes.length ? `Brewed with caveats — ${notes.join('; ')}.` : 'Brewed! Stock has been deducted.',
+          notes.length ? 'error' : 'success'
+        );
+        await loadRecipe();
+      } catch (err) {
+        showMessage(err.message, 'error');
+      }
+    });
+
+    // Replace this recipe's contents from a new BeerXML file.
+    qs('#update-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const fileInput = qs('#update-file');
+      if (!fileInput.files.length) return;
+
+      const fd = new FormData();
+      fd.append('file', fileInput.files[0]);
+      try {
+        const res = await fetch(`/api/recipes/${recipeId}/update`, { method: 'POST', body: fd });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || `Update failed: ${res.status}`);
+        e.target.reset();
+        showMessage('Recipe updated. Resolve any new ingredients on the Mappings page.', 'success');
+        await loadRecipe();
+      } catch (err) {
+        showMessage(err.message, 'error');
+      }
+    });
+
+    // Delete this recipe, then return to the list.
+    qs('#delete-btn').addEventListener('click', async () => {
+      const ok = await confirmDialog({
+        title: 'Delete recipe',
+        message: 'Delete this recipe permanently?',
+        confirmText: 'Delete',
+        danger: true,
+      });
+      if (!ok) return;
+      try {
+        const res = await fetch(`/api/recipes/${recipeId}`, { method: 'DELETE' });
+        if (!res.ok) {
+          const d = await res.json().catch(() => ({}));
+          throw new Error(d.error || `Delete failed: ${res.status}`);
+        }
+        window.location.href = '/recipes.html';
+      } catch (err) {
+        showMessage(err.message, 'error');
+      }
+    });
+
+    loadRecipe().catch((err) => showMessage(err.message, 'error'));
+  </script>
+</body>
+</html>

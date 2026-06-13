@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Recipes — Brew Stock Manager</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css">
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <main class="container">
+    <nav class="app-nav">
+      <a href="/">Stock</a>
+      <a href="/recipes.html" class="active">Recipes</a>
+      <a href="/mappings.html">Mappings</a>
+    </nav>
+
+    <h1>Recipes</h1>
+    <div id="message"></div>
+
+    <article>
+      <h3>Import a BeerXML recipe</h3>
+      <form id="import-form">
+        <input type="file" name="file" accept=".xml,application/xml,text/xml" required>
+        <button type="submit">Import</button>
+      </form>
+    </article>
+
+    <table class="fit-table">
+      <thead>
+        <tr><th>Name</th><th>Style</th><th class="hide-mobile">Imported</th><th></th></tr>
+      </thead>
+      <tbody id="recipes-body">
+        <tr><td colspan="4" aria-busy="true">Loading…</td></tr>
+      </tbody>
+    </table>
+  </main>
+
+  <script src="/app.js"></script>
+  <script>
+    const msgEl = qs('#message');
+    function showMessage(text, kind) {
+      msgEl.innerHTML = `<div class="message ${kind}">${esc(text)}</div>`;
+    }
+
+    async function loadRecipes() {
+      const recipes = await apiGet('/api/recipes');
+      const body = qs('#recipes-body');
+      if (recipes.length === 0) {
+        body.innerHTML = '<tr><td colspan="4" class="muted">No recipes imported yet.</td></tr>';
+        return;
+      }
+      body.innerHTML = recipes.map((r) => `
+        <tr>
+          <td><a href="/recipe.html?id=${r.id}">${esc(r.name)}</a></td>
+          <td>${esc(r.style || '—')}</td>
+          <td class="muted hide-mobile">${esc(r.imported_at || '')}</td>
+          <td><button class="contrast outline" data-delete="${r.id}" data-name="${esc(r.name)}">Delete</button></td>
+        </tr>`).join('');
+    }
+
+    qs('#recipes-body').addEventListener('click', async (e) => {
+      const btn = e.target;
+      if (!btn.dataset.delete) return;
+      const ok = await confirmDialog({
+        title: 'Delete recipe',
+        message: `Delete "${btn.dataset.name}" permanently?`,
+        confirmText: 'Delete',
+        danger: true,
+      });
+      if (!ok) return;
+      try {
+        const res = await fetch(`/api/recipes/${btn.dataset.delete}`, { method: 'DELETE' });
+        if (!res.ok) {
+          const d = await res.json().catch(() => ({}));
+          throw new Error(d.error || `Delete failed: ${res.status}`);
+        }
+        showMessage('Recipe deleted.', 'success');
+        await loadRecipes();
+      } catch (err) {
+        showMessage(err.message, 'error');
+      }
+    });
+
+    qs('#import-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const form = e.target;
+      const fileInput = form.querySelector('input[type=file]');
+      if (!fileInput.files.length) return;
+
+      const fd = new FormData();
+      fd.append('file', fileInput.files[0]);
+
+      try {
+        const res = await fetch('/api/recipes/import', { method: 'POST', body: fd });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || `Import failed: ${res.status}`);
+        form.reset();
+        showMessage(`Imported "${data.name}". Resolve any new ingredients on the Mappings page.`, 'success');
+        await loadRecipes();
+      } catch (err) {
+        showMessage(err.message, 'error');
+      }
+    });
+
+    loadRecipes().catch((err) => showMessage(err.message, 'error'));
+  </script>
+</body>
+</html>

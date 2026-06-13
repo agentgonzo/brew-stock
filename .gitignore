@@ -1,0 +1,27 @@
+# Dependencies
+node_modules/
+
+# Database and data
+data/
+*.db
+*.db-shm
+*.db-wal
+
+# Claude-related files
+.claude/
+CLAUDE.md
+
+# IDE settings
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+npm-debug.log*

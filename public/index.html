@@ -1,0 +1,324 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Stock — Brew Stock Manager</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css">
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <main class="container">
+    <nav class="app-nav">
+      <a href="/" class="active">Stock</a>
+      <a href="/recipes.html">Recipes</a>
+      <a href="/mappings.html">Mappings</a>
+    </nav>
+
+    <h1>Stock</h1>
+    <div id="message"></div>
+
+    <details class="stock-section" data-type="malt">
+      <summary>Malt <span class="count" id="count-malt"></span></summary>
+      <table class="fit-table">
+        <thead>
+          <tr><th>Item</th><th>Qty</th><th>Adjust</th><th></th></tr>
+        </thead>
+        <tbody id="body-malt"></tbody>
+      </table>
+    </details>
+
+    <details class="stock-section" data-type="hop">
+      <summary>Hops <span class="count" id="count-hop"></span></summary>
+      <table class="fit-table">
+        <thead>
+          <tr><th>Item</th><th>Qty</th><th>Adjust</th><th></th></tr>
+        </thead>
+        <tbody id="body-hop"></tbody>
+      </table>
+    </details>
+
+    <details class="stock-section" data-type="yeast">
+      <summary>Yeast <span class="count" id="count-yeast"></span></summary>
+      <table class="fit-table">
+        <thead>
+          <tr><th>Item</th><th>Qty</th><th>Adjust</th><th></th></tr>
+        </thead>
+        <tbody id="body-yeast"></tbody>
+      </table>
+    </details>
+
+    <article>
+      <h3>Add a stock item</h3>
+      <form id="new-item-form">
+        <div class="grid">
+          <input name="name" placeholder="Name (e.g. Maris Otter)" required>
+          <select name="type" id="new-type" required>
+            <option value="malt">malt</option>
+            <option value="hop">hop</option>
+            <option value="yeast">yeast</option>
+          </select>
+        </div>
+        <div class="grid">
+          <label>
+            <span id="qty-label">Quantity (kg)</span>
+            <input id="new-qty" name="quantity" type="number" step="0.1" value="0">
+          </label>
+          <label>
+            <span id="attr-label">EBC</span>
+            <input name="attr" type="number" step="any" placeholder="optional">
+          </label>
+        </div>
+        <button type="submit">Create item</button>
+      </form>
+    </article>
+  </main>
+
+  <script src="/app.js"></script>
+  <script>
+    const msgEl = qs('#message');
+    function showMessage(text, kind) {
+      msgEl.innerHTML = `<div class="message ${kind}">${esc(text)}</div>`;
+    }
+
+    // Per-type display config.
+    const TYPES = {
+      malt:  { unit: 'kg',     attr: 'ebc',         attrLabel: 'EBC',           step: 0.1 },
+      hop:   { unit: 'g',      attr: 'alpha_acid',  attrLabel: 'AA %',          step: 10 },
+      yeast: { unit: 'packet', attr: 'attenuation', attrLabel: 'Attenuation %', step: 1 },
+    };
+
+    // Inline SVG icons — no icon dependency. Sized via currentColor.
+    const ICON_EDIT = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>';
+    const ICON_DELETE = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>';
+
+    // Attribute as muted text, e.g. "EBC 5" / "AA 12.5%" / "Attenuation 81%".
+    // Returns '' when the attribute is unset.
+    function attrLine(item) {
+      const t = TYPES[item.type];
+      const v = item[t.attr];
+      if (v === null || v === undefined || v === '') return '';
+      const hasPct = t.attrLabel.includes('%');
+      const label = t.attrLabel.replace(/\s*%$/, '');
+      return `${esc(label)} ${esc(v)}${hasPct ? '%' : ''}`;
+    }
+
+    // Each item renders a display row plus a sibling edit row (hidden until
+    // the pencil is tapped).
+    function renderRow(item) {
+      const out = Number(item.quantity) <= 0;
+      const t = TYPES[item.type];
+      const attrVal = item[t.attr] === null || item[t.attr] === undefined ? '' : item[t.attr];
+      const meta = attrLine(item);
+      return `
+        <tr class="${out ? 'out-of-stock' : ''}">
+          <td>
+            <div class="item-name">${esc(item.name)}</div>
+            ${meta ? `<div class="item-meta">${meta}</div>` : ''}
+          </td>
+          <td class="qty-cell">${fmtQty(item.quantity, item.unit)}${out ? ' <span class="out-badge">OUT</span>' : ''}</td>
+          <td>
+            <div class="inline-form">
+              <input type="number" step="${t.step}" class="adjust-input" placeholder="amt" style="width:5.5rem">
+              <button data-add="${item.id}">Add</button>
+              <button class="secondary" data-set="${item.id}">Set</button>
+            </div>
+          </td>
+          <td>
+            <div class="actions">
+              <button class="icon-btn" data-edit="${item.id}" aria-label="Edit ${esc(item.name)}" title="Edit">${ICON_EDIT}</button>
+              <button class="icon-btn delete" data-delete="${item.id}" data-name="${esc(item.name)}" aria-label="Delete ${esc(item.name)}" title="Delete">${ICON_DELETE}</button>
+            </div>
+          </td>
+        </tr>
+        <tr class="edit-row" data-edit-row="${item.id}">
+          <td colspan="4">
+            <div class="edit-form">
+              <label class="edit-name-label">Name
+                <input class="edit-name" type="text" value="${esc(item.name)}">
+              </label>
+              <label>${esc(t.attrLabel)}
+                <input class="edit-attr" type="number" step="any" value="${esc(attrVal)}" placeholder="optional">
+              </label>
+              <div class="edit-actions">
+                <button data-save="${item.id}">Save</button>
+                <button class="secondary outline" data-cancel="${item.id}">Cancel</button>
+              </div>
+            </div>
+          </td>
+        </tr>`;
+    }
+
+    async function loadStock() {
+      const items = await apiGet('/api/stock');
+      // API already orders by type then name (alphabetical). Group by type.
+      for (const type of Object.keys(TYPES)) {
+        const rows = items.filter((i) => i.type === type);
+        const body = qs(`#body-${type}`);
+        qs(`#count-${type}`).textContent = `(${rows.length})`;
+        body.innerHTML = rows.length
+          ? rows.map(renderRow).join('')
+          : '<tr><td colspan="4" class="muted">None.</td></tr>';
+      }
+    }
+
+    // Update the add-form labels to match the selected type.
+    function syncFormLabels() {
+      const t = qs('#new-type').value;
+      qs('#qty-label').textContent = `Quantity (${TYPES[t].unit})`;
+      qs('#attr-label').textContent = TYPES[t].attrLabel;
+      qs('#new-qty').step = TYPES[t].step;
+    }
+    qs('#new-type').addEventListener('change', syncFormLabels);
+    syncFormLabels();
+
+    document.addEventListener('submit', async (e) => {
+      const form = e.target;
+
+      if (form.id === 'new-item-form') {
+        e.preventDefault();
+        const fd = new FormData(form);
+        const type = fd.get('type');
+        const body = {
+          name: fd.get('name'),
+          type,
+          quantity: Number(fd.get('quantity')) || 0,
+        };
+        const attr = fd.get('attr');
+        if (attr !== '') body[TYPES[type].attr] = Number(attr);
+        try {
+          await apiPost('/api/stock', body);
+          form.reset();
+          syncFormLabels();
+          showMessage('Stock item created.', 'success');
+          await loadStock();
+        } catch (err) {
+          showMessage(err.message, 'error');
+        }
+        return;
+      }
+
+    });
+
+    // Read the shared adjust input that sits in the same cell as a button.
+    function adjustValue(btn) {
+      return Number(btn.closest('.inline-form').querySelector('.adjust-input').value);
+    }
+
+    // Show one item's edit row, closing any other that's open.
+    function openEditRow(id) {
+      document.querySelectorAll('.edit-row.open').forEach((r) => r.classList.remove('open'));
+      const row = document.querySelector(`.edit-row[data-edit-row="${id}"]`);
+      if (!row) return;
+      row.classList.add('open');
+      row.querySelector('.edit-name').focus();
+    }
+
+    // Persist the name + attribute from an item's edit row.
+    async function saveEditRow(id) {
+      const row = document.querySelector(`.edit-row[data-edit-row="${id}"]`);
+      const name = row.querySelector('.edit-name').value.trim();
+      const attr = row.querySelector('.edit-attr');
+      // The attribute column is type-specific; derive it from the section.
+      // An empty attribute clears it to null (server coerces non-numeric to null).
+      const type = row.closest('details').dataset.type;
+      const body = { name, [TYPES[type].attr]: attr.value.trim() };
+      try {
+        const res = await fetch(`/api/stock/${id}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || `Save failed: ${res.status}`);
+        await loadStock();
+      } catch (err) {
+        showMessage(err.message, 'error');
+      }
+    }
+
+    // All row actions are plain buttons; icon buttons wrap an SVG, so resolve
+    // the actual <button> via closest before reading its data-* action.
+    document.addEventListener('click', async (e) => {
+      const btn = e.target.closest('button');
+      if (!btn) return;
+
+      if (btn.dataset.add) {
+        e.preventDefault();
+        const amount = adjustValue(btn);
+        if (!Number.isFinite(amount)) { showMessage('Enter an amount to add.', 'error'); return; }
+        try {
+          await apiPost(`/api/stock/${btn.dataset.add}/add`, { amount });
+          await loadStock();
+        } catch (err) { showMessage(err.message, 'error'); }
+        return;
+      }
+
+      if (btn.dataset.set) {
+        e.preventDefault();
+        const quantity = adjustValue(btn);
+        if (!Number.isFinite(quantity)) { showMessage('Enter a quantity to set.', 'error'); return; }
+        try {
+          await apiPost(`/api/stock/${btn.dataset.set}/adjust`, { quantity });
+          await loadStock();
+        } catch (err) { showMessage(err.message, 'error'); }
+        return;
+      }
+
+      if (btn.dataset.edit) {
+        e.preventDefault();
+        openEditRow(btn.dataset.edit);
+        return;
+      }
+
+      if (btn.dataset.cancel) {
+        e.preventDefault();
+        btn.closest('.edit-row').classList.remove('open');
+        return;
+      }
+
+      if (btn.dataset.save) {
+        e.preventDefault();
+        await saveEditRow(btn.dataset.save);
+        return;
+      }
+
+      if (btn.dataset.delete) {
+        e.preventDefault();
+        const ok = await confirmDialog({
+          title: 'Delete stock item',
+          message: `Delete "${btn.dataset.name}" from stock entirely?`,
+          confirmText: 'Delete',
+          danger: true,
+        });
+        if (!ok) return;
+        try {
+          const res = await fetch(`/api/stock/${btn.dataset.delete}`, { method: 'DELETE' });
+          if (!res.ok) {
+            const d = await res.json().catch(() => ({}));
+            throw new Error(d.error || `Delete failed: ${res.status}`);
+          }
+          showMessage('Stock item deleted.', 'success');
+          await loadStock();
+        } catch (err) { showMessage(err.message, 'error'); }
+        return;
+      }
+    });
+
+    // In an edit row: Enter saves, Escape cancels.
+    document.addEventListener('keydown', (e) => {
+      const row = e.target.closest && e.target.closest('.edit-row');
+      if (!row) return;
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        saveEditRow(row.dataset.editRow);
+      } else if (e.key === 'Escape') {
+        e.preventDefault();
+        row.classList.remove('open');
+      }
+    });
+
+    loadStock().catch((err) => showMessage(err.message, 'error'));
+  </script>
+</body>
+</html>

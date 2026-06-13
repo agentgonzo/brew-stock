@@ -1,0 +1,11 @@
+services:
+  brew-stock:
+    build: .
+    ports:
+      - "3000:3000"
+    volumes:
+      - brew-data:/app/data
+    restart: unless-stopped
+
+volumes:
+  brew-data:

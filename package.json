@@ -1,0 +1,22 @@
+{
+  "name": "brew-stock-manager",
+  "version": "1.0.0",
+  "description": "Self-hosted homebrewing ingredient stock manager",
+  "type": "commonjs",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "DB_PATH=./data/brew.db node src/server.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@fastify/multipart": "^8.3.0",
+    "@fastify/static": "^7.0.4",
+    "better-sqlite3": "^11.3.0",
+    "fast-xml-parser": "^4.5.0",
+    "fastify": "^4.28.1",
+    "fuse.js": "^7.0.0"
+  }
+}
