@@ -214,6 +214,17 @@ tr.out-of-stock td:first-child {
   vertical-align: middle;
 }
 
+/* Sortable table headers. */
+th.sortable {
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+}
+th.sortable:hover { opacity: 0.75; }
+th.sortable::after { content: ' ⇅'; opacity: 0.35; font-size: 0.75em; }
+th[data-sort-dir="asc"]::after  { content: ' ▲'; opacity: 1; }
+th[data-sort-dir="desc"]::after { content: ' ▼'; opacity: 1; }
+
 /* Secondary columns hidden on narrow screens (e.g. timestamps, type labels). */
 .hide-mobile {
   display: table-cell;

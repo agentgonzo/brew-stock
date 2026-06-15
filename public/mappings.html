@@ -22,14 +22,9 @@
     </p>
     <div id="message"></div>
 
-    <table class="fit-table">
-      <thead>
-        <tr><th>Recipe ingredient</th><th class="hide-mobile">Type</th><th>Map to stock item</th><th></th></tr>
-      </thead>
-      <tbody id="mappings-body">
-        <tr><td colspan="4" aria-busy="true">Loading…</td></tr>
-      </tbody>
-    </table>
+    <div id="mappings-sections">
+      <p aria-busy="true">Loading…</p>
+    </div>
 
     <hr>
 
@@ -42,14 +37,7 @@
         Every confirmed mapping. Delete a wrong one to remap it (it returns to the
         list above). Note: near-identical names get re-matched automatically.
       </p>
-      <table class="fit-table">
-        <thead>
-          <tr><th>Recipe ingredient</th><th class="hide-mobile">Type</th><th>Mapped to</th><th></th></tr>
-        </thead>
-        <tbody id="all-body">
-          <tr><td colspan="4" aria-busy="true">Loading…</td></tr>
-        </tbody>
-      </table>
+      <div id="all-sections"></div>
     </div>
   </main>
 
@@ -60,56 +48,65 @@
       msgEl.innerHTML = `<div class="message ${kind}">${esc(text)}</div>`;
     }
 
+    const SECTION_LABELS = { malt: 'Malt', hop: 'Hops', yeast: 'Yeast' };
     let allStock = [];
 
     function optionsFor(type, suggestions) {
-      // Suggestions first (fuzzy top matches), then the rest of same-type stock.
       const suggestedIds = new Set(suggestions.map((s) => s.id));
       const sameType = allStock.filter((s) => s.type === type);
       const rest = sameType.filter((s) => !suggestedIds.has(s.id));
-
       const suggestedOpts = suggestions
         .map((s) => `<option value="${s.id}">★ ${esc(s.name)}</option>`)
         .join('');
       const restOpts = rest
         .map((s) => `<option value="${s.id}">${esc(s.name)}</option>`)
         .join('');
-
       return `<option value="" disabled selected>Choose…</option>${suggestedOpts}${restOpts}`;
+    }
+
+    function groupByType(items) {
+      const byType = {};
+      for (const item of items) {
+        (byType[item.type] = byType[item.type] || []).push(item);
+      }
+      return byType;
     }
 
     async function load() {
       allStock = await apiGet('/api/stock');
       const unresolved = await apiGet('/api/mappings/unresolved');
-      const body = qs('#mappings-body');
+      const container = qs('#mappings-sections');
 
       if (unresolved.length === 0) {
-        body.innerHTML = '<tr><td colspan="4" class="muted">Nothing to resolve — all ingredients are mapped.</td></tr>';
+        container.innerHTML = '<p class="muted">Nothing to resolve — all ingredients are mapped.</p>';
         return;
       }
 
-      body.innerHTML = unresolved.map((ing) => `
-        <tr data-name="${esc(ing.name)}">
-          <td>${esc(ing.name)}</td>
-          <td class="hide-mobile">${esc(ing.type)}</td>
-          <td>
-            <select class="map-select">${optionsFor(ing.type, ing.suggestions)}</select>
-          </td>
-          <td><button class="confirm-btn">Confirm</button></td>
-        </tr>`).join('');
+      const byType = groupByType(unresolved);
+      container.innerHTML = Object.entries(SECTION_LABELS)
+        .filter(([key]) => byType[key] && byType[key].length)
+        .map(([key, label]) => `
+          <h4>${label}</h4>
+          <table class="fit-table">
+            <thead><tr><th>Recipe ingredient</th><th>Map to stock item</th><th></th></tr></thead>
+            <tbody>
+              ${byType[key].map((ing) => `
+                <tr data-name="${esc(ing.name)}">
+                  <td>${esc(ing.name)}</td>
+                  <td><select class="map-select">${optionsFor(ing.type, ing.suggestions)}</select></td>
+                  <td><button class="confirm-btn">Confirm</button></td>
+                </tr>`).join('')}
+            </tbody>
+          </table>`).join('');
+      container.querySelectorAll('table').forEach(makeSortable);
     }
 
-    qs('#mappings-body').addEventListener('click', async (e) => {
+    qs('#mappings-sections').addEventListener('click', async (e) => {
       if (!e.target.classList.contains('confirm-btn')) return;
       const tr = e.target.closest('tr');
       const select = tr.querySelector('.map-select');
       const stockItemId = Number(select.value);
-
-      if (!stockItemId) {
-        showMessage('Pick a stock item first.', 'error');
-        return;
-      }
-
+      if (!stockItemId) { showMessage('Pick a stock item first.', 'error'); return; }
       try {
         await apiPost('/api/mappings', {
           recipe_ingredient_name: tr.dataset.name,
@@ -127,18 +124,30 @@
 
     async function loadAll() {
       const all = await apiGet('/api/mappings');
-      const body = qs('#all-body');
+      const container = qs('#all-sections');
+
       if (all.length === 0) {
-        body.innerHTML = '<tr><td colspan="4" class="muted">No confirmed mappings yet.</td></tr>';
+        container.innerHTML = '<p class="muted">No confirmed mappings yet.</p>';
         return;
       }
-      body.innerHTML = all.map((m) => `
-        <tr>
-          <td>${esc(m.name)}</td>
-          <td class="hide-mobile">${esc(m.type)}</td>
-          <td>${esc(m.stock_name)}</td>
-          <td><button class="icon-btn delete" data-del-name="${esc(m.name)}" aria-label="Delete mapping for ${esc(m.name)}" title="Delete mapping">${ICON_DELETE}</button></td>
-        </tr>`).join('');
+
+      const byType = groupByType(all);
+      container.innerHTML = Object.entries(SECTION_LABELS)
+        .filter(([key]) => byType[key] && byType[key].length)
+        .map(([key, label]) => `
+          <h4>${label}</h4>
+          <table class="fit-table">
+            <thead><tr><th>Recipe ingredient</th><th>Mapped to</th><th></th></tr></thead>
+            <tbody>
+              ${byType[key].map((m) => `
+                <tr>
+                  <td>${esc(m.name)}</td>
+                  <td>${esc(m.stock_name)}</td>
+                  <td><button class="icon-btn delete" data-del-name="${esc(m.name)}" aria-label="Delete mapping for ${esc(m.name)}" title="Delete mapping">${ICON_DELETE}</button></td>
+                </tr>`).join('')}
+            </tbody>
+          </table>`).join('');
+      container.querySelectorAll('table').forEach(makeSortable);
     }
 
     qs('#show-all').addEventListener('change', (e) => {
@@ -146,7 +155,7 @@
       if (e.target.checked) loadAll().catch((err) => showMessage(err.message, 'error'));
     });
 
-    qs('#all-body').addEventListener('click', async (e) => {
+    qs('#all-sections').addEventListener('click', async (e) => {
       const btn = e.target.closest('button[data-del-name]');
       if (!btn) return;
       const name = btn.dataset.delName;
@@ -164,8 +173,6 @@
           throw new Error(d.error || `Delete failed: ${res.status}`);
         }
         showMessage(`Deleted mapping for "${name}".`, 'success');
-        // Refresh unresolved first (this re-applies near-certain matches),
-        // then the full list so it reflects the true state.
         await load();
         await loadAll();
       } catch (err) {

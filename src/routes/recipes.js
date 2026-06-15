@@ -43,6 +43,7 @@ function buildCheck(recipeId) {
     if (!mapped) {
       return {
         name: ing.name,
+        type: ing.type,
         required: ing.amount,
         inStock: null,
         unit: ing.unit,
@@ -57,6 +58,7 @@ function buildCheck(recipeId) {
 
     return {
       name: ing.name,
+      type: ing.type,
       required,
       inStock: mapped.quantity,
       unit: mapped.unit,

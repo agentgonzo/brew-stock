@@ -111,12 +111,12 @@
       const attrVal = item[t.attr] === null || item[t.attr] === undefined ? '' : item[t.attr];
       const meta = attrLine(item);
       return `
-        <tr class="${out ? 'out-of-stock' : ''}">
+        <tr class="${out ? 'out-of-stock' : ''}" data-item-id="${item.id}">
           <td>
             <div class="item-name">${esc(item.name)}</div>
             ${meta ? `<div class="item-meta">${meta}</div>` : ''}
           </td>
-          <td class="qty-cell">${fmtQty(item.quantity, item.unit)}${out ? ' <span class="out-badge">OUT</span>' : ''}</td>
+          <td class="qty-cell" data-sort-val="${item.quantity}">${fmtQty(item.quantity, item.unit)}${out ? ' <span class="out-badge">OUT</span>' : ''}</td>
           <td>
             <div class="inline-form">
               <input type="number" step="${t.step}" class="adjust-input" style="width:5.5rem">
@@ -326,7 +326,9 @@
       }
     });
 
-    loadStock().catch((err) => showMessage(err.message, 'error'));
+    loadStock()
+      .then(() => document.querySelectorAll('.stock-section table').forEach(makeSortable))
+      .catch((err) => showMessage(err.message, 'error'));
   </script>
 </body>
 </html>

@@ -53,6 +53,58 @@ function fmtQty(amount, unit) {
   return `${amount} ${unit}`;
 }
 
+// Make a table's non-empty header cells clickable for column sorting.
+// Stock tables pair a display row (data-item-id) with a hidden edit row
+// (data-edit-row); both are moved together so the pairing is preserved.
+// Simple tables (no data-item-id) sort individual rows.
+function makeSortable(table) {
+  const ths = [...table.querySelectorAll('thead th')];
+  let sortCol = -1, sortDir = 1;
+
+  function cellVal(tr, col) {
+    const td = tr.cells[col];
+    if (!td) return '';
+    return td.dataset.sortVal !== undefined ? td.dataset.sortVal : td.textContent.trim();
+  }
+
+  function doSort(colIdx) {
+    sortDir = sortCol === colIdx ? -sortDir : 1;
+    sortCol = colIdx;
+    ths.forEach((th, i) => {
+      delete th.dataset.sortDir;
+      if (i === colIdx) th.dataset.sortDir = sortDir > 0 ? 'asc' : 'desc';
+    });
+
+    const tbody = table.querySelector('tbody');
+    const hasGroups = !!tbody.querySelector('tr[data-item-id]');
+
+    const cmp = (av, bv) => {
+      const an = parseFloat(av), bn = parseFloat(bv);
+      return (!isNaN(an) && !isNaN(bn)) ? (an - bn) * sortDir : av.localeCompare(bv) * sortDir;
+    };
+
+    if (hasGroups) {
+      const displayRows = [...tbody.querySelectorAll('tr[data-item-id]')];
+      displayRows.sort((a, b) => cmp(cellVal(a, colIdx), cellVal(b, colIdx)));
+      displayRows.forEach(row => {
+        const editRow = tbody.querySelector(`tr[data-edit-row="${row.dataset.itemId}"]`);
+        tbody.appendChild(row);
+        if (editRow) tbody.appendChild(editRow);
+      });
+    } else {
+      const rows = [...tbody.querySelectorAll('tr')];
+      rows.sort((a, b) => cmp(cellVal(a, colIdx), cellVal(b, colIdx)));
+      rows.forEach(r => tbody.appendChild(r));
+    }
+  }
+
+  ths.forEach((th, i) => {
+    if (!th.textContent.trim()) return;
+    th.classList.add('sortable');
+    th.addEventListener('click', () => doSort(i));
+  });
+}
+
 // Promise-based confirmation modal (replaces window.confirm). Uses a native
 // <dialog> styled by Pico. Resolves true on confirm, false on cancel/Esc.
 function confirmDialog({

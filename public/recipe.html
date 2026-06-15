@@ -21,14 +21,9 @@
     <div id="message"></div>
 
     <h3>Stock check</h3>
-    <table class="fit-table">
-      <thead>
-        <tr><th>Ingredient</th><th>Required</th><th>In stock</th><th>Status</th></tr>
-      </thead>
-      <tbody id="check-body">
-        <tr><td colspan="4" aria-busy="true">Loading…</td></tr>
-      </tbody>
-    </table>
+    <div id="check-sections">
+      <p aria-busy="true">Loading…</p>
+    </div>
 
     <p id="brewable-summary"></p>
     <button id="brew-btn" disabled>Brew this</button>
@@ -77,14 +72,29 @@
       document.title = `${recipe.name} — Brew Stock Manager`;
 
       const check = await apiGet(`/api/recipes/${recipeId}/check`);
-      const body = qs('#check-body');
-      body.innerHTML = check.ingredients.map((row) => `
-        <tr class="${rowClass(row)}">
-          <td>${esc(row.name)}</td>
-          <td>${fmtQty(row.required, row.unit)}</td>
-          <td>${row.inStock === null ? '<span class="muted">—</span>' : fmtQty(row.inStock, row.unit)}</td>
-          <td>${statusCell(row)}</td>
-        </tr>`).join('');
+      const sections = qs('#check-sections');
+      const SECTION_LABELS = { malt: 'Malt', hop: 'Hops', yeast: 'Yeast' };
+      const byType = {};
+      for (const row of check.ingredients) {
+        (byType[row.type] = byType[row.type] || []).push(row);
+      }
+      sections.innerHTML = Object.entries(SECTION_LABELS)
+        .filter(([key]) => byType[key] && byType[key].length)
+        .map(([key, label]) => `
+          <h4>${label}</h4>
+          <table class="fit-table" data-check-type="${key}">
+            <thead><tr><th>Ingredient</th><th>Required</th><th>In stock</th><th>Status</th></tr></thead>
+            <tbody>
+              ${byType[key].map((row) => `
+                <tr class="${rowClass(row)}">
+                  <td>${esc(row.name)}</td>
+                  <td>${fmtQty(row.required, row.unit)}</td>
+                  <td>${row.inStock === null ? '<span class="muted">—</span>' : fmtQty(row.inStock, row.unit)}</td>
+                  <td>${statusCell(row)}</td>
+                </tr>`).join('')}
+            </tbody>
+          </table>`).join('');
+      sections.querySelectorAll('table').forEach(makeSortable);
 
       // Brew is always available; when stock is short/unresolved it becomes a
       // warning and only what's available will be deducted.
