@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Shopping List — Brew Stock Manager</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css">
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <main class="container">
+    <nav class="app-nav">
+      <a href="/">Stock</a>
+      <a href="/recipes.html">Recipes</a>
+      <a href="/shopping-list.html" class="active">Shopping List</a>
+      <a href="/mappings.html">Mappings</a>
+    </nav>
+
+    <h1>Shopping List</h1>
+    <p id="recipe-names" class="muted"></p>
+    <div id="message"></div>
+
+    <div id="list-sections">
+      <p aria-busy="true">Loading…</p>
+    </div>
+  </main>
+
+  <script src="/app.js"></script>
+  <script>
+    const idsParam = param('ids');
+    const msgEl = qs('#message');
+    function showMessage(text, kind) {
+      msgEl.innerHTML = `<div class="message ${kind}">${esc(text)}</div>`;
+    }
+
+    function statusCell(row) {
+      if (row.unresolved) return '<span class="unresolved">Unresolved</span>';
+      return row.ok
+        ? '<span class="ok">OK</span>'
+        : '<span class="short">Short</span>';
+    }
+
+    function rowClass(row) {
+      if (row.unresolved) return 'row-unresolved';
+      return row.ok ? 'row-ok' : 'row-short';
+    }
+
+    async function loadShoppingList() {
+      if (!idsParam) {
+        showMessage('No recipes selected. Go to Recipes and check the ones you want to plan for.', 'error');
+        qs('#list-sections').innerHTML = '';
+        return;
+      }
+
+      const data = await apiGet(`/api/recipes/shopping-list?ids=${encodeURIComponent(idsParam)}`);
+
+      qs('#recipe-names').textContent = data.recipes.length
+        ? `Recipes: ${data.recipes.map((r) => r.name).join(', ')}`
+        : 'No matching recipes found.';
+
+      const sections = qs('#list-sections');
+      const SECTION_LABELS = { malt: 'Malt', hop: 'Hops', yeast: 'Yeast' };
+      const byType = {};
+      for (const row of data.ingredients) {
+        (byType[row.type] = byType[row.type] || []).push(row);
+      }
+
+      if (data.ingredients.length === 0) {
+        sections.innerHTML = '<p class="muted">No ingredients to show.</p>';
+        return;
+      }
+
+      sections.innerHTML = Object.entries(SECTION_LABELS)
+        .filter(([key]) => byType[key] && byType[key].length)
+        .map(([key, label]) => `
+          <h4>${label}</h4>
+          <table class="fit-table" data-check-type="${key}">
+            <thead><tr><th>Ingredient</th><th>Required</th><th>In stock</th><th>To buy</th><th>Status</th></tr></thead>
+            <tbody>
+              ${byType[key].map((row) => `
+                <tr class="${rowClass(row)}">
+                  <td>${esc(row.name)}</td>
+                  <td>${fmtQty(row.required, row.unit)}</td>
+                  <td>${row.inStock === null ? '<span class="muted">—</span>' : fmtQty(row.inStock, row.unit)}</td>
+                  <td>${fmtQty(row.toBuy, row.unit)}</td>
+                  <td>${statusCell(row)}</td>
+                </tr>`).join('')}
+            </tbody>
+          </table>`).join('');
+      sections.querySelectorAll('table').forEach(makeSortable);
+    }
+
+    loadShoppingList().catch((err) => showMessage(err.message, 'error'));
+  </script>
+</body>
+</html>

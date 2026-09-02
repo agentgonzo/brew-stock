@@ -71,6 +71,67 @@ function buildCheck(recipeId) {
   return { brewable, rows };
 }
 
+// Build shopping-list rows for a set of recipe ids: raw ingredient rows are
+// aggregated by (type, name) before resolving, since recipe_ingredients uses
+// a fixed unit per type ('g' for malt/hop, 'packet' for yeast) — summing
+// amounts directly is safe without a conversion step at this stage.
+function buildShoppingList(recipeIds) {
+  autoApplyMappings(db);
+
+  const placeholders = recipeIds.map(() => '?').join(',');
+  const ingredients = db
+    .prepare(`SELECT name, type, amount, unit FROM recipe_ingredients WHERE recipe_id IN (${placeholders})`)
+    .all(...recipeIds);
+
+  const totals = new Map();
+  for (const ing of ingredients) {
+    const key = `${ing.type}::${ing.name}`;
+    const existing = totals.get(key);
+    if (existing) {
+      existing.amount += ing.amount;
+    } else {
+      totals.set(key, { ...ing });
+    }
+  }
+
+  const findMapping = db.prepare(
+    `SELECT s.id AS stock_item_id, s.quantity AS quantity, s.unit AS unit
+       FROM ingredient_mappings m
+       JOIN stock_items s ON s.id = m.stock_item_id
+      WHERE m.recipe_ingredient_name = ?`
+  );
+
+  return [...totals.values()].map((ing) => {
+    const mapped = findMapping.get(ing.name);
+
+    if (!mapped) {
+      return {
+        name: ing.name,
+        type: ing.type,
+        required: ing.amount,
+        inStock: null,
+        toBuy: ing.amount,
+        unit: ing.unit,
+        unresolved: true,
+        ok: false,
+      };
+    }
+
+    const required = convert(ing.amount, ing.unit, mapped.unit);
+    const toBuy = Math.max(0, required - mapped.quantity);
+
+    return {
+      name: ing.name,
+      type: ing.type,
+      required,
+      inStock: mapped.quantity,
+      toBuy,
+      unit: mapped.unit,
+      ok: mapped.quantity >= required,
+    };
+  });
+}
+
 // Read and parse an uploaded BeerXML file from a multipart request.
 // Returns { xml, parsed } on success, or { error } on failure.
 async function readBeerXMLUpload(request) {
@@ -168,6 +229,27 @@ module.exports = async function recipeRoutes(fastify) {
     return db
       .prepare('SELECT id, name, style, imported_at FROM recipes ORDER BY imported_at DESC, id DESC')
       .all();
+  });
+
+  // Shopping list: aggregated ingredient totals across multiple recipes.
+  fastify.get('/api/recipes/shopping-list', async (request, reply) => {
+    const idsParam = request.query.ids || '';
+    const recipeIds = idsParam
+      .split(',')
+      .map((s) => parseInt(s.trim(), 10))
+      .filter((n) => !isNaN(n));
+
+    if (recipeIds.length === 0) {
+      return reply.code(400).send({ error: 'ids query param required, e.g. ?ids=1,2,3' });
+    }
+
+    const placeholders = recipeIds.map(() => '?').join(',');
+    const recipes = db
+      .prepare(`SELECT id, name FROM recipes WHERE id IN (${placeholders})`)
+      .all(...recipeIds);
+
+    const ingredients = buildShoppingList(recipeIds);
+    return { recipes, ingredients };
   });
 
   // Single recipe with its ingredients.

@@ -12,6 +12,7 @@
     <nav class="app-nav">
       <a href="/">Stock</a>
       <a href="/recipes.html" class="active">Recipes</a>
+      <a href="/shopping-list.html">Shopping List</a>
       <a href="/mappings.html">Mappings</a>
     </nav>
 
@@ -28,12 +29,14 @@
 
     <table class="fit-table">
       <thead>
-        <tr><th>Name</th><th>Style</th><th class="hide-mobile">Imported</th><th></th></tr>
+        <tr><th></th><th>Name</th><th>Style</th><th class="hide-mobile">Imported</th><th></th></tr>
       </thead>
       <tbody id="recipes-body">
-        <tr><td colspan="4" aria-busy="true">Loading…</td></tr>
+        <tr><td colspan="5" aria-busy="true">Loading…</td></tr>
       </tbody>
     </table>
+
+    <button id="shopping-list-btn" disabled>Build shopping list</button>
   </main>
 
   <script src="/app.js"></script>
@@ -47,17 +50,37 @@
       const recipes = await apiGet('/api/recipes');
       const body = qs('#recipes-body');
       if (recipes.length === 0) {
-        body.innerHTML = '<tr><td colspan="4" class="muted">No recipes imported yet.</td></tr>';
+        body.innerHTML = '<tr><td colspan="5" class="muted">No recipes imported yet.</td></tr>';
         return;
       }
       body.innerHTML = recipes.map((r) => `
         <tr>
+          <td><input type="checkbox" class="recipe-select" data-recipe-id="${r.id}"></td>
           <td><a href="/recipe.html?id=${r.id}">${esc(r.name)}</a></td>
           <td>${esc(r.style || '—')}</td>
           <td class="muted hide-mobile">${esc(r.imported_at || '')}</td>
           <td><button class="contrast outline" data-delete="${r.id}" data-name="${esc(r.name)}">Delete</button></td>
         </tr>`).join('');
+      syncShoppingListBtn();
     }
+
+    // Enable "Build shopping list" only when at least one recipe is checked.
+    function syncShoppingListBtn() {
+      const checked = document.querySelectorAll('.recipe-select:checked');
+      qs('#shopping-list-btn').disabled = checked.length === 0;
+    }
+
+    qs('#recipes-body').addEventListener('change', (e) => {
+      if (e.target.classList.contains('recipe-select')) syncShoppingListBtn();
+    });
+
+    qs('#shopping-list-btn').addEventListener('click', () => {
+      const ids = [...document.querySelectorAll('.recipe-select:checked')]
+        .map((cb) => cb.dataset.recipeId)
+        .join(',');
+      if (!ids) return;
+      window.location.href = `/shopping-list.html?ids=${ids}`;
+    });
 
     qs('#recipes-body').addEventListener('click', async (e) => {
       const btn = e.target;
