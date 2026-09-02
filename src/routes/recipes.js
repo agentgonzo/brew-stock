@@ -89,7 +89,7 @@ function buildShoppingList(recipeIds) {
   );
 
   // Group by (type, stock_item_id) if mapped, or (type, name) if unresolved.
-  // Track both the display name and the aggregated amount.
+  // Keep recipe_unit for conversion; stock_unit for final display.
   const totals = new Map();
   for (const ing of ingredients) {
     const mapped = findMapping.get(ing.name);
@@ -105,7 +105,8 @@ function buildShoppingList(recipeIds) {
         name: mapped ? mapped.stock_name : ing.name,
         type: ing.type,
         amount: ing.amount,
-        unit: mapped ? mapped.unit : ing.unit,
+        recipe_unit: ing.unit, // Original unit from recipe ingredients
+        stock_unit: mapped ? mapped.unit : ing.unit,
         mapped,
       });
     }
@@ -119,16 +120,16 @@ function buildShoppingList(recipeIds) {
         required: ing.amount,
         inStock: null,
         toBuy: ing.amount,
-        unit: ing.unit,
+        unit: ing.stock_unit,
         unresolved: true,
         ok: false,
       };
     }
 
-    const required = convert(ing.amount, ing.unit, ing.mapped.unit);
+    const required = convert(ing.amount, ing.recipe_unit, ing.stock_unit);
     const toBuyRaw = Math.max(0, required - ing.mapped.quantity);
     // Round to the same precision as the unit: 3 decimals for kg, whole for g/packets.
-    const toBuy = ing.mapped.unit === 'kg'
+    const toBuy = ing.stock_unit === 'kg'
       ? Math.round(toBuyRaw * 1000) / 1000
       : Math.round(toBuyRaw);
 
@@ -138,7 +139,7 @@ function buildShoppingList(recipeIds) {
       required,
       inStock: ing.mapped.quantity,
       toBuy,
-      unit: ing.mapped.unit,
+      unit: ing.stock_unit,
       ok: ing.mapped.quantity >= required,
     };
   });
