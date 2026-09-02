@@ -71,10 +71,8 @@ function buildCheck(recipeId) {
   return { brewable, rows };
 }
 
-// Build shopping-list rows for a set of recipe ids: raw ingredient rows are
-// aggregated by (type, name) before resolving, since recipe_ingredients uses
-// a fixed unit per type ('g' for malt/hop, 'packet' for yeast) — summing
-// amounts directly is safe without a conversion step at this stage.
+// Build shopping-list rows for a set of recipe ids: group by mapped stock item
+// (or ingredient name if unresolved), sum amounts, and round to stock unit precision.
 function buildShoppingList(recipeIds) {
   autoApplyMappings(db);
 
@@ -83,28 +81,38 @@ function buildShoppingList(recipeIds) {
     .prepare(`SELECT name, type, amount, unit FROM recipe_ingredients WHERE recipe_id IN (${placeholders})`)
     .all(...recipeIds);
 
-  const totals = new Map();
-  for (const ing of ingredients) {
-    const key = `${ing.type}::${ing.name}`;
-    const existing = totals.get(key);
-    if (existing) {
-      existing.amount += ing.amount;
-    } else {
-      totals.set(key, { ...ing });
-    }
-  }
-
   const findMapping = db.prepare(
-    `SELECT s.id AS stock_item_id, s.quantity AS quantity, s.unit AS unit
+    `SELECT s.id AS stock_item_id, s.name AS stock_name, s.quantity AS quantity, s.unit AS unit
        FROM ingredient_mappings m
        JOIN stock_items s ON s.id = m.stock_item_id
       WHERE m.recipe_ingredient_name = ?`
   );
 
-  return [...totals.values()].map((ing) => {
+  // Group by (type, stock_item_id) if mapped, or (type, name) if unresolved.
+  // Track both the display name and the aggregated amount.
+  const totals = new Map();
+  for (const ing of ingredients) {
     const mapped = findMapping.get(ing.name);
+    const key = mapped
+      ? `${ing.type}::stock_${mapped.stock_item_id}`
+      : `${ing.type}::${ing.name}`;
 
-    if (!mapped) {
+    const existing = totals.get(key);
+    if (existing) {
+      existing.amount += ing.amount;
+    } else {
+      totals.set(key, {
+        name: mapped ? mapped.stock_name : ing.name,
+        type: ing.type,
+        amount: ing.amount,
+        unit: mapped ? mapped.unit : ing.unit,
+        mapped,
+      });
+    }
+  }
+
+  return [...totals.values()].map((ing) => {
+    if (!ing.mapped) {
       return {
         name: ing.name,
         type: ing.type,
@@ -117,17 +125,21 @@ function buildShoppingList(recipeIds) {
       };
     }
 
-    const required = convert(ing.amount, ing.unit, mapped.unit);
-    const toBuy = Math.max(0, required - mapped.quantity);
+    const required = convert(ing.amount, ing.unit, ing.mapped.unit);
+    const toBuyRaw = Math.max(0, required - ing.mapped.quantity);
+    // Round to the same precision as the unit: 3 decimals for kg, whole for g/packets.
+    const toBuy = ing.mapped.unit === 'kg'
+      ? Math.round(toBuyRaw * 1000) / 1000
+      : Math.round(toBuyRaw);
 
     return {
       name: ing.name,
       type: ing.type,
       required,
-      inStock: mapped.quantity,
+      inStock: ing.mapped.quantity,
       toBuy,
-      unit: mapped.unit,
-      ok: mapped.quantity >= required,
+      unit: ing.mapped.unit,
+      ok: ing.mapped.quantity >= required,
     };
   });
 }
