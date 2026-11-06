@@ -31,7 +31,7 @@ function buildCheck(recipeId) {
     .all(recipeId);
 
   const findMapping = db.prepare(
-    `SELECT s.id AS stock_item_id, s.quantity AS quantity, s.unit AS unit
+    `SELECT s.id AS stock_item_id, s.name AS stock_name, s.quantity AS quantity, s.unit AS unit
        FROM ingredient_mappings m
        JOIN stock_items s ON s.id = m.stock_item_id
       WHERE m.recipe_ingredient_name = ?`
@@ -64,6 +64,7 @@ function buildCheck(recipeId) {
       unit: mapped.unit,
       ok: mapped.quantity >= required,
       stockItemId: mapped.stock_item_id,
+      stockName: mapped.stock_name,
     };
   });
 

@@ -88,7 +88,8 @@
             <tbody>
               ${byType[key].map((row) => `
                 <tr class="${rowClass(row)}">
-                  <td>${esc(row.name)}</td>
+                  <td>${esc(row.name)}${row.stockName && row.stockName !== row.name
+                    ? `<br><small class="muted">&rarr; using stock: ${esc(row.stockName)}</small>` : ''}</td>
                   <td>${fmtQty(row.required, row.unit)}</td>
                   <td>${row.inStock === null ? '<span class="muted">—</span>' : fmtQty(row.inStock, row.unit)}</td>
                   <td>${statusCell(row)}</td>
