@@ -48,6 +48,12 @@ db.exec(`
     recipe_ingredient_name  TEXT PRIMARY KEY,
     stock_item_id           INTEGER NOT NULL REFERENCES stock_items(id) ON DELETE CASCADE
   );
+
+  -- Names whose mapping the user deleted on purpose: auto-apply skips them so
+  -- a deleted near-certain match isn't instantly re-created.
+  CREATE TABLE IF NOT EXISTS mapping_auto_skip (
+    recipe_ingredient_name  TEXT PRIMARY KEY
+  );
 `);
 
 // Migration: add type-specific attribute columns to pre-existing databases.

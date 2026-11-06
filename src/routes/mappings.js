@@ -49,8 +49,8 @@ module.exports = async function mappingRoutes(fastify) {
   });
 
   // Delete a confirmed mapping by its recipe ingredient name. The name then
-  // falls back to unresolved (or is re-applied automatically if it's a
-  // near-certain fuzzy match — see autoApplyMappings).
+  // falls back to unresolved and is excluded from auto-apply (mapping_auto_skip)
+  // until the user confirms a mapping for it again.
   fastify.delete('/api/mappings/:name', async (request, reply) => {
     const result = db
       .prepare('DELETE FROM ingredient_mappings WHERE recipe_ingredient_name = ?')
@@ -59,6 +59,9 @@ module.exports = async function mappingRoutes(fastify) {
     if (result.changes === 0) {
       return reply.code(404).send({ error: 'mapping not found' });
     }
+    // Stop auto-apply from immediately re-creating it.
+    db.prepare('INSERT OR IGNORE INTO mapping_auto_skip (recipe_ingredient_name) VALUES (?)')
+      .run(request.params.name);
     return { deleted: true };
   });
 

@@ -21,6 +21,7 @@ function autoApplyMappings(db) {
          FROM recipe_ingredients ri
          LEFT JOIN ingredient_mappings m ON m.recipe_ingredient_name = ri.name
         WHERE m.recipe_ingredient_name IS NULL
+          AND ri.name NOT IN (SELECT recipe_ingredient_name FROM mapping_auto_skip)
         GROUP BY ri.name, ri.type`
     )
     .all();
